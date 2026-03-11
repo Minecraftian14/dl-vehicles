@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
+import os
 
 # -----------------------------
 # Class Index Mapping (consistent across all submissions)
@@ -14,6 +15,7 @@ CLASS_IDX = {
     3: "Bike",
     4: "None"
 }
+
 
 # -----------------------------
 # Lightweight CNN Model (<5 MB)
@@ -35,6 +37,51 @@ class SmallCNN(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
+
+class SimpleCNN(nn.Sequential):
+    def __init__(self,
+                 h_conv: list[int] = [16, 32, 32],
+                 c_conv: dict[str, int] = {'kernel_size': 3, 'stride': 1, 'padding': 1},
+                 h_fc: list[int] = [128],
+                 input_shape=(1, 3, 32, 32),
+                 out_classes=5,
+                 dtype: torch.dtype = torch.float32,
+                 device='cpu',
+                 ):
+
+        sp = {'dtype': dtype, 'device': device}
+
+        shape = input_shape
+        layers: list[nn.Module] = []
+        if len(h_conv) >= 2:
+            layers.extend([
+                nn.Conv2d(shape[1], h_conv[0], **sp, **c_conv),
+                nn.MaxPool2d(2, stride=2),
+                nn.ReLU()])
+            for h_size in h_conv[1:-1]:
+                shape = get_out(input_shape, layers)
+                layers.extend([
+                    nn.Conv2d(shape[1], h_size, **sp, **c_conv),
+                    nn.MaxPool2d(2, stride=2),
+                    nn.ReLU()])
+
+        if len(h_conv) >= 1:
+            shape = get_out(input_shape, layers)
+            layers.append(nn.Conv2d(shape[1], h_conv[-1], **sp, **c_conv))
+        # layers.append(nn.ReLU())
+
+        layers.append(nn.Flatten())
+        for h_size in h_fc:
+            shape = get_out(input_shape, layers)
+            layers.append(nn.Linear(shape[1], h_size, **sp))
+            layers.append(nn.ReLU())
+        shape = get_out(input_shape, layers)
+        layers.append(nn.Linear(shape[1], out_classes, **sp))
+        layers.append(nn.Softmax())
+
+        super(SimpleCNN, self).__init__(*layers)
+
 
 # -----------------------------
 # Inference Class
@@ -64,10 +111,48 @@ class VehicleClassifier:
             _, predicted = torch.max(outputs, 1)
         return predicted.item()
 
+
 # -----------------------------
-# Example Usage
+# Utilities
 # -----------------------------
-if __name__ == "__main__":
-    classifier = VehicleClassifier(model_path="student_model.pth")  # load your trained weights
-    idx = classifier.predict("test_image.jpg")
-    print(f"Predicted Class Index: {idx}, Label: {CLASS_IDX[idx]}")
+
+def get_out(input_shape: tuple[int], model: list[nn.Module] | nn.Module):
+    if not isinstance(model, list): model = [model]
+    if len(model) == 0: return input_shape
+    with torch.no_grad():
+
+        parameter = None
+        for layer in model:
+            parameters = layer.parameters()
+            for p in parameters: parameter = p
+        if parameter is not None:
+            device, dtype = parameter.device, parameter.dtype
+        else:
+            device, dtype = "cpu", torch.float32
+
+        meta = torch.zeros(input_shape, device=device, dtype=dtype)  # device='meta'
+        for layer in model:
+            meta = layer(meta)
+        return meta.shape
+
+
+def fop(path: str):
+    d = path.rsplit(os.sep, 1)[0]
+    os.path.exists(d) or os.makedirs(d)
+    return path
+
+
+def measure_size(model):
+    file = fop('temp\\model_measure_size.pth')
+    torch.save(model.state_dict(), file)
+    size = os.path.getsize(file)
+    os.remove(file)
+    return size / (1024 * 1024)
+
+# # -----------------------------
+# # Example Usage
+# # -----------------------------
+# if __name__ == "__main__":
+#     classifier = VehicleClassifier(model_path="student_model.pth")  # load your trained weights
+#     idx = classifier.predict("test_image.jpg")
+#     print(f"Predicted Class Index: {idx}, Label: {CLASS_IDX[idx]}")

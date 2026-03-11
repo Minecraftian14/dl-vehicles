@@ -1,0 +1,6 @@
+.idea/
+dataset/
+temp/
+secret_*.*
+.obsidian/workspace.json
+*.egg-info/
