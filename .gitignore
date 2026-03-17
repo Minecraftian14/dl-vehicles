@@ -4,3 +4,6 @@ temp/
 secret_*.*
 .obsidian/workspace.json
 *.egg-info/
+**/__pycache__/
+**/*.pth
+submission/

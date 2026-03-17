@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
+from torchvision import transforms, models
 from PIL import Image
 import os
 
@@ -47,6 +47,7 @@ class SimpleCNN(nn.Sequential):
                  input_shape=(1, 3, 32, 32),
                  out_classes=5,
                  dtype: torch.dtype = torch.float32,
+                 add_pools=True,
                  device='cpu',
                  ):
 
@@ -55,21 +56,19 @@ class SimpleCNN(nn.Sequential):
         shape = input_shape
         layers: list[nn.Module] = []
         if len(h_conv) >= 2:
-            layers.extend([
-                nn.Conv2d(shape[1], h_conv[0], **sp, **c_conv),
-                nn.MaxPool2d(2, stride=2),
-                nn.ReLU()])
+            layers.append(nn.Conv2d(shape[1], h_conv[0], **sp, **c_conv))
+            if add_pools: layers.append(nn.MaxPool2d(2, stride=2))
+            layers.append(nn.ReLU())
             for h_size in h_conv[1:-1]:
                 shape = get_out(input_shape, layers)
-                layers.extend([
-                    nn.Conv2d(shape[1], h_size, **sp, **c_conv),
-                    nn.MaxPool2d(2, stride=2),
-                    nn.ReLU()])
+                layers.append(nn.Conv2d(shape[1], h_size, **sp, **c_conv))
+                if add_pools: layers.append(nn.MaxPool2d(2, stride=2))
+                layers.append(nn.ReLU())
 
         if len(h_conv) >= 1:
             shape = get_out(input_shape, layers)
             layers.append(nn.Conv2d(shape[1], h_conv[-1], **sp, **c_conv))
-        # layers.append(nn.ReLU())
+            layers.append(nn.ReLU())
 
         layers.append(nn.Flatten())
         for h_size in h_fc:
@@ -78,9 +77,55 @@ class SimpleCNN(nn.Sequential):
             layers.append(nn.ReLU())
         shape = get_out(input_shape, layers)
         layers.append(nn.Linear(shape[1], out_classes, **sp))
-        layers.append(nn.Softmax())
+        # layers.append(nn.Softmax())  # In most cases pytorch expects raw logits, not the soft max
 
         super(SimpleCNN, self).__init__(*layers)
+
+
+class MobileNetCNN(nn.Module):
+    def __init__(self,
+                 input_shape=(1, 3, 32, 32),
+                 out_classes=5,
+                 dtype: torch.dtype = torch.float32,
+                 device='cpu',
+                 ):
+        super(MobileNetCNN, self).__init__()
+        # Expected input shape is 224,224
+        self.model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
+        for param in self.model.parameters():
+            param.requires_grad = False
+        self.model.classifier[-1] = nn.Linear(in_features=1024, out_features=out_classes)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class WhatAmIDoingCNN(nn.Module):
+    def __init__(self,
+                 out_classes=5,
+                 device='cpu',
+                 ):
+        super(WhatAmIDoingCNN, self).__init__()
+        # Expected input shape is 224,224
+        self.model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
+        self.model.classifier = nn.Identity()  # Output is 576
+        for param in self.model.parameters():
+            param.requires_grad = False
+        self.model = self.model.to(device)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(in_features=576, out_features=256, device=device),
+            nn.Hardtanh(),
+            nn.Dropout(p=0.2, inplace=True),
+            nn.Linear(in_features=256, out_features=out_classes, device=device),
+        )
+        self.discriminator = nn.Linear(in_features=576, out_features=1, device=device)
+
+    def forward(self, x):
+        internal_state = self.model.forward(x)
+        classification = self.classifier(internal_state)
+        discrimination = self.discriminator(internal_state)
+        return classification, discrimination
 
 
 # -----------------------------
@@ -88,28 +133,26 @@ class SimpleCNN(nn.Sequential):
 # DONT CHANGE THE INTERFACE OF THE CLASS
 # -----------------------------
 class VehicleClassifier:
-    def __init__(self, model_path=None):
+    def __init__(self, model_path='model_state_space.pth'):
         self.device = torch.device("cpu")
-        self.model = SmallCNN(num_classes=len(CLASS_IDX))
+        self.model = WhatAmIDoingCNN(out_classes=4)
         if model_path:
             self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
 
         # Preprocessing pipeline
         self.transform = transforms.Compose([
-            transforms.Resize((32, 32)),
+            transforms.Resize((224, 224)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                                 std=[0.5, 0.5, 0.5])
         ])
 
     def predict(self, image_path: str) -> int:
         image = Image.open(image_path).convert("RGB")
         tensor = self.transform(image).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            outputs = self.model(tensor)
-            _, predicted = torch.max(outputs, 1)
-        return predicted.item()
+            classification, discrimination = self.model(tensor)
+            discrimination = discrimination > 1
+            return (classification.argmax(axis=1) * discrimination + 4 * (not discrimination)).item()
 
 
 # -----------------------------

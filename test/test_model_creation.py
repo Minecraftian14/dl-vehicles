@@ -7,3 +7,6 @@ def test_model_creation():
     print(measure_size(model))
     print(measure_size(SimpleCNN(dtype=torch.float16)))
     print(measure_size(SimpleCNN(h_conv=[], h_fc=[])))
+
+
+
