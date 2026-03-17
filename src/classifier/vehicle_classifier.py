@@ -151,7 +151,7 @@ class VehicleClassifier:
         tensor = self.transform(image).unsqueeze(0).to(self.device)
         with torch.no_grad():
             classification, discrimination = self.model(tensor)
-            discrimination = discrimination > 1
+            discrimination = discrimination > 0
             return (classification.argmax(axis=1) * discrimination + 4 * (not discrimination)).item()
 
 

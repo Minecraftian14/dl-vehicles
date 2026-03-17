@@ -1,5 +1,7 @@
 @echo off
 echo Staring Package Manager
+
+echo Copying source files
 for /F %%I in ('ls src\classifier') do (
     echo Copying %%I
     if "%%I"=="__init__.py" (
@@ -15,9 +17,14 @@ for /F %%I in ('ls src\classifier') do (
     :continue
     echo Done
 )
+
+echo Creating README
+pandoc -t markdown_strict --extract-media=submission/MT2025732/attachments "src/report/Computer Vision Assignment 2.docx" -o submission/MT2025732/README.md
+
 echo Compressing Folder
 cd submission\MT2025732
 call 7z a MT2025732.zip
 mv MT2025732.zip ..
 cd ..\..
+
 echo Done

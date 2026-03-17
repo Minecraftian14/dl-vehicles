@@ -131,8 +131,6 @@ def split_sample(descriptor: Descriptor, image: np.ndarray, sampling=500, return
                     desc['box'] = box
                     l_desc.append(desc)
                 c += 1
-                if c == 102:
-                    continue
         s = s * 2
 
     return labels, samples, l_desc

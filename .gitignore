@@ -7,3 +7,4 @@ secret_*.*
 **/__pycache__/
 **/*.pth
 submission/
+build/

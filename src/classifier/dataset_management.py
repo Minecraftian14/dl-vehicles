@@ -137,7 +137,7 @@ class IMDataset(Dataset):
             if mapping not in IMDataset.mappings: mapping = random.choice(IMDataset.reverse[mapping])
             assert specimen in ('train', 'test', 'validation')
             assert mapping in IMDataset.mappings
-            directory = os.path.join(root, 'dataset', 'imagenet', mapping)  # TODO: Add TTV splits
+            directory = os.path.join(root, 'dataset', 'imagenet', specimen, mapping)
             if sample is None: sample = random.choice(os.listdir(directory)).rsplit('.', 1)[0]
             if log: print(f'Loading {specimen}/{mapping}/{sample}')
             image = Image.open(os.path.join(directory, f'{sample}.JPEG'))
@@ -153,7 +153,7 @@ class IMDataset(Dataset):
     def __init__(self, specimen='train', root='..', hard_limit=None, dtype=np.float32):
         assert specimen in ('train', 'test', 'validation')
         self.root = root
-        self.directory = os.path.join(root, 'dataset', 'imagenet')  # TODO add specimen
+        self.directory = os.path.join(root, 'dataset', 'imagenet', specimen)
         mappings = os.listdir(self.directory)
 
         descriptors: dict[str, list[Descriptor]] = {}
@@ -248,7 +248,7 @@ class PipelinedDataset_OLD(IterableDataset):
             offset[0] = 0
             return
 
-        offset[0] = offset + len(samples)
+        offset[0] = offset[0] + len(samples)
 
     def __iter__(self):
         offset = [0]
